@@ -1,0 +1,250 @@
+```{r required packages}
+require(SCENIC)
+require(AUCell)
+require(Seurat)
+setwd("IIDP4_stressed")
+```
+
+```{r exprMat}
+
+load("IIDP4_stress_processed.Robj")
+#Select only alpha or beta cells.
+#cellnumber <- which(IIDP4_stress_processed@meta.data$CellType=="Alpha")
+cellnumber <- which(IIDP4_stress_processed@meta.data$CellType=="Beta")
+cellname <- rownames(IIDP4_stress_processed@meta.data)[cellnumber]
+exprMat <- exprMatall[,cellname]
+saveRDS(exprMat, file="data/exprMat.Rds")
+```
+
+
+```{r scenicOptions}
+org="hgnc"
+dbDir="~/databases"
+myDatasetTitle="raw data beta cells"
+scenicOptions <- initializeScenic(org = org, dbDir = dbDir, datasetTitle = myDatasetTitle, nCores = 20)
+saveRDS(scenicOptions, file="int/scenicOptions.Rds")
+```
+
+```{r genefiltering}
+genesKept <- geneFiltering(exprMat, scenicOptions, minCountsPerGene = 5, minSamples = ncol(exprMat) * 0.01)
+exprMat_filtered <- exprMat[genesKept,]
+```
+
+```{r correlation}
+runCorrelation(exprMat_filtered, scenicOptions)
+```
+
+```{r run SCENIC}
+#possible normalisation/transformation
+#exprMat_filtered <- log(exprMat_filtered + 1)
+#exprMat <- log(exprMat + 1)
+runGenie3(exprMat_filtered, scenicOptions)
+
+scenicOptions@settings$verbose <- TRUE
+scenicOptions@settings$nCores <- 10
+scenicOptions@settings$seed <- 123
+runSCENIC_1_coexNetwork2modules(scenicOptions)
+runSCENIC_2_createRegulons(scenicOptions)
+runSCENIC_3_scoreCells(scenicOptions, exprMat)
+```
+
+```{r binarization}
+scenicOptions@fileNames$int[[18]] <- "int/3.5_AUCellThresholds.Rds"
+
+#possible normalisation/transformation
+#exprMat <- log(exprMat+1)
+aucellApp <- plotTsne_AUCellApp(scenicOptions, exprMat)
+savedSelections <- shiny::runApp(aucellApp)
+
+newThresholds <- savedSelections$thresholds
+scenicOptions@fileNames$int["aucell_thresholds",1] <- "int/newThresholds.Rds"
+saveRDS(newThresholds, file=getIntName(scenicOptions, "aucell_thresholds"))
+saveRDS(scenicOptions, file="int/scenicOptions.Rds")
+
+runSCENIC_4_aucell_binarize(scenicOptions)
+```
+
+```{r tSNE}
+#Calculate own tsne.
+require(philentropy)
+require(reshape2)
+binaryRegulonActivity <- readRDS("int/4.1_binaryRegulonActivity.Rds")
+
+binaryRegulonActivity2 <- t(binaryRegulonActivity)
+distanceall <- philentropy::distance(binaryRegulonActivity2, method="jaccard")
+colnames(distanceall) <- rownames(distanceall) <- colnames(binaryRegulonActivity)
+#saveRDS(distanceall, file="~/distanceall.Rds")
+
+#distanceall <- readRDS("distanceall.Rds")
+require(Rtsne)
+set.seed(123)
+tsnb <- Rtsne(distanceall, is_distance=TRUE, perplexity=140)
+require(AUCell)
+
+tsneba <- tsnb$Y
+rownames(tsneba) <- rownames(distanceall)
+pdf(file="calculated_tsne_expression_overlay.pdf")
+plotTsne_cellProps(tsneba, cellInfo=cellInfo, colVars=colVars, gradientCols= c("grey", "yellow", "orange", "red"))
+dev.off()
+```
+
+```{r histogram}
+#get the sum of cells active per regulon
+rawbinarysum <- as.matrix(rowSums(binaryRegulonActivity))
+#make a histogram
+hist(rawbinarysum, xlab="number of cells active per regulon", breaks=seq(0,2000, by=10))
+binaryorder <- rawbinarysum
+#select the middle cells
+rawbinarymatselected <- binaryRegulonActivity[rownames(rawbinarysum)[which(rawbinarysum>400 & rawbinarysum<1000)],]
+```
+
+```{r color the cells by expression of PDX1, NKX6.1 and MAFB}
+cellInfo <- rownames(IIDP4_stress_processed@meta.data)
+cellInfo <- as.data.frame(cellInfo)
+cellInfo$CellType <- IIDP4_stress_processed@meta.data$CellType
+cellInfo$PDX1 <- as.matrix(GetAssayData(IIDP4_stress_processed, slot="counts"))["ENSG00000139515",]
+cellInfo$NKX6.1 <- as.matrix(GetAssayData(IIDP4_stress_processed, slot="counts"))["ENSG00000163623",]
+cellInfo$MAFB <- as.matrix(GetAssayData(IIDP4_stress_processed, slot="counts"))["ENSG00000204103",]
+require(tibble)
+cellInfo <- column_to_rownames(cellInfo, var="cellInfo")
+cellInfo$Condition <- IIDP4_stress_processed@meta.data$Condition
+head(cellInfo)
+
+saveRDS(cellInfo, file="int/cellInfo.Rds")
+
+colVars <- list(CellType=setNames(c("#7570b3", "#e7298a", "#66a61e",  "#1b9e77", "#a6761d", "#e6ab02", "#d95f02"), 
+    c("Alpha", "Beta", "Delta", "PP", "Duct", "Acinar", "Mesench.")), Condition=setNames(c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628", "#ffb90f", "#f781bf", "#999999"), c("Glucose + Palmitate", "IL1b + IFNg", "Thapsigargin", "H2O2", "Il1b", "Glucose", "Untreated", "Palmitate", "IFNg")))
+
+saveRDS(colVars, file="int/colVars.Rds")
+```
+
+```{r pca on binaryRegulonactivity}
+#remove outliers
+binaryRegulonActivity <- binaryRegulonActivity[,-c(1150, 163, 381, 1109, 104, 698, 1368)]
+pca <- prcomp(t(binaryRegulonActivity), scale=TRUE)
+#make a barplot of the percentage the pca contributes
+pca.var <- pca$sdev^2
+pca.var.per <- round(pca.var/sum(pca.var)*100, 1)
+barplot(pca.var.per, main="Scree plot", xlab="Principal Component", ylab="Percent Variation")
+#make a pca plot with ggplot, first make the right format
+cellInfo <- readRDS("int/cellInfo.Rds") #in nonormalisation/allcells
+pca.data <- data.frame(Cell=rownames(pca$x), X=pca$x[,1], Y=pca$x[,2])
+pca.data.m <- merge(pca.data, cellInfo, by=0)
+pca.data.m$PDX1 <- NULL
+pca.data.m$NKX6.1 <- NULL
+pca.data.m$MAFB <- NULL
+rownames(pca.data.m) <- pca.data.m$Row.names
+pca.data.m$Row.names <- NULL
+#make a pca plot with ggplot
+require(ggplot2)
+png(filename="PCA_of_binaryRegulonActivity.png", width=730, height = 573, res=100)
+ggplot(data=pca.data.m, aes(x=X, y=Y, color=Condition)) +
+  geom_point() +
+  xlab(paste("PC1 - ", pca.var.per[1], "%", sep="")) +
+  ylab(paste("PC2 - ", pca.var.per[2], "%", sep="")) +
+  theme_bw() +
+  ggtitle("PCA plot beta cells") +
+  scale_color_manual(values=c("#a65628", "#e41a1c", "#984ea3", "#999999", "#ff7f00", "#377eb8", "#f781bf", "#4daf4a", "#ffb90f"))
+dev.off()
+#Condition: "#a65628", "#e41a1c", "#984ea3", "#999999", "#ff7f00", "#377eb8", "#f781bf", "#4daf4a", "#ffb90f" 
+#CellType: "#a6761d", "#e7298a", "#7570b3", "#66a61e",  "#1b9e77", "#e6ab02", "#d95f02"
+
+png(filename="PCA_of_binaryRegulonActivity.png", width=730, height = 573, res=100)
+ggplot(data=pca.data.m, aes(x=X, y=Y, color=Condition)) +
+  geom_point() +
+  xlab(paste("PC1 -", pca.var.per[1], "%", sep="")) +
+  ylab(paste("PC2 -", pca.var.per[2], "%", sep="")) +
+  theme_bw() +
+  ggtitle("PCA plot beta cells, glucose + palmitate vs untreated") +
+  scale_color_manual(values=c("#e41a1c", "#ffb90f"))
+dev.off()
+```
+
+```{r Heatmap cluster selection}
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+thresholds <- loadInt(scenicOptions, "aucell_thresholds")
+thresholds <- getThresholdSelected(thresholds)
+
+binaryRegulonActivity <- loadInt(scenicOptions, "aucell_binary_full")
+
+regulonSelection <- loadInt(scenicOptions, "aucell_regulonSelection", ifNotExists="null", verbose=FALSE)
+
+if(length(regulonSelection[["all"]])>1)
+    {
+      regulonSelection[["all"]] <- regulonSelection[["all"]][which(regulonSelection[["all"]] %in% rownames(binaryRegulonActivity))]
+      binaryMat <- binaryRegulonActivity[regulonSelection[["all"]],,drop=FALSE]
+      
+        betaungp <- NMF::aheatmap(binaryMat, scale="none", revC=TRUE, main="all",   
+                      annCol=cellInfo[colnames(binaryMat),, drop=FALSE],
+                      annColor=colVars,
+                      color = c("white", "black"))
+  }
+
+k <- as.hclust(betaungp$Colv)
+plot(k)
+#cut at height 7.9 to get the two clusters that might seem intereseting
+a <- cutree(as.hclust(betaungp$Colv), h=7.9)
+colors <- c("red", "lightblue", "lightgreen", "black", "orange", "pink", "yellow", "purple", "grey", "brown", "darkgreen", "darkblue", "turquoise", "magenta", "thistle")
+png(filename = "dendrogram.png", width = 1400, height=1400, res=100)
+plot(as.phylo(k), tip.color=colors[a])
+dev.off()
+
+#the two interesting clusters are colored lightgreen and black so correspond to cluster number 3 and 4
+cl1 <- which(a==3)
+cl2 <- which(a==4)
+
+bincl1 <- binaryRegulonActivity[, cl1]
+bincl2 <- binaryRegulonActivity[, cl2]
+cluster1 <- t(data.matrix(rep(1, times=151)))
+rownames(cluster1) <- "cluster"
+colnames(cluster1) <- colnames(bincl1)
+bincl1 <- rbind(cluster1, bincl1)
+cluster2 <- t(data.matrix(rep(2, times=95)))
+rownames(cluster2) <- "cluster"
+colnames(cluster2) <- colnames(bincl2)
+bincl2 <- rbind(cluster2, bincl2)
+binmatcl1_2 <- cbind(bincl1, bincl2)
+
+#Condition untreated vs glucose + palmitate
+nrow(binmatcl1_2)
+k <- data.frame(rownames=rownames(binmatcl1_2)[2:274], "p-value"=0, "c interval low"=0, "c interval high"=0, "odds ratio"=0 )
+rownames(k) <- k[,1]
+k$rownames <- NULL
+for (i in 2:274){
+  nregpcon <- matrix(c(sum(binmatcl1_2[i, which(binmatcl1_2[1,]==1)]),
+                     sum(binmatcl1_2[i, which(binmatcl1_2[1,]==1)]),
+                     sum(rowSums(binmatcl1_2[-i, which(binmatcl1_2[1,]==2)])),
+                     sum(rowSums(binmatcl1_2[-i, which(binmatcl1_2[1,]==2)]))), ncol=2)
+
+l <- fisher.test(nregpcon)  
+k[i,1] <- l$p.value
+k[i,2] <- l$conf.int[1]
+k[i,3] <- l$conf.int[2]
+k[i,4] <- l$estimate[["odds ratio"]]
+}
+
+rownames(k)[which(k$p.value<0.05)]
+#only ARFGAP1
+```
+
+```{r tsne with bigger dots}
+setwd("BW-3/Stage/Firstdataset/normalisation/nonormalisation/betacells")
+scenicOptions <- readRDS("int/scenicOptions.Rds")
+skipTsne <- FALSE
+if(!skipTsne)
+{
+  tSNE_fileName <- tsneAUC(scenicOptions, aucType="Binary", filePrefix=getIntName(scenicOptions, "tsne_prefix"), onlyHighConf=FALSE) # default: nPcs, perpl, seed
+  tSNE <- readRDS(tSNE_fileName)
+  
+  # AUCell (activity) as html: 
+  fileName <- getOutName(scenicOptions, "s4_binarytSNE_colAct")
+  plotTsne_regulonActivityHTML(scenicOptions, exprMat, fileName, tSNE) #open the resulting html locally
+  
+  # Plot cell properties:
+  sub <- ""; if("type" %in% names(tSNE)) sub <- paste0("t-SNE on ", tSNE$type)
+  cellInfo <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, "cellInfo"), ifNotExists="null")
+  colVars <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, "colVars"), ifNotExists="null")
+  pdf(paste0(getOutName(scenicOptions, "s4_binarytSNE_colProps"),".pdf"))
+  plotTsne_cellProps(tSNE$Y, cellInfo=cellInfo, colVars=colVars, cex=4, sub=sub)
+  dev.off()
+}
