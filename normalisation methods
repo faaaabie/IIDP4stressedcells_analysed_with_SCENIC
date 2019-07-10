@@ -1,0 +1,135 @@
+```{r load data}
+load("~/IIDP4_stress_processed.Robj", verbose=TRUE)
+features <- read.table("~/features.tsv", sep="\t")
+setwd("/exports/lkeb-hpc/flkick/firstdataset/normalisation/logtransformation/")
+```
+
+```{r get expression matrix}
+require(Seurat)
+exprMat <- as.matrix(GetAssayData(IIDP4_stress_processed, slot="counts"))
+
+#To get the names of the gene symbols in stead of the gene ensembles
+
+val <- match(rownames(exprMat), features[,1])
+nex <- nrow(exprMat)
+myfun <- function(y){ 
+  as.character(features[y,2])
+  return(as.character(features[y,2]))
+}
+for (i in 1:nex){
+  rownames(exprMat)[i] <- myfun(val[i])
+}
+
+rm(IIDP4_stress_processed)
+rm(features)
+```
+
+```{r remove rows with same gene symbol}
+#remove duplicate rows
+l <- table(rownames(exprMat))
+m <- which(l>1)
+which(rownames(exprMat)==names(m)[1])
+plot(exprMat[13264,], exprMat[13265,])
+#row 13264 has only one cell for which it is expressed for value 1 and 13265 has more cells that show expression, so 13265 will be kept
+which(rownames(exprMat)==names(m)[2])
+plot(exprMat[6094,], exprMat[6095,])
+n <- which(exprMat[6094,]>0)
+#row 6094 has more cells, 144 with expression for this gene than row 6095, 48, so row 6094 will be kept
+which(rownames(exprMat)==names(m)[3])
+plot(exprMat[6916,], exprMat[6917,])
+n <- which(exprMat[6917,]>0)
+#row 6916 has no cells that have expression for this gene while 6917 has, so 6917 will be kept
+which(rownames(exprMat)==names(m)[4])
+plot(exprMat[26224,], exprMat[26225,])
+n <- which(exprMat[26225,]>0)
+#row 26224 has 369 cells with expression for this gene and row 26225 has 257 cells with expression for this gene, so row 26224 will be kept
+which(rownames(exprMat)==names(m)[5])
+plot(exprMat[5950,], exprMat[5954,])
+n <- which(exprMat[5954,]>0)
+#row 5950 has 1432 cells with expression for this gene and row 5954 has only 152 cells with expression, so row 5950 will be kept
+which(rownames(exprMat)==names(m)[6])
+plot(exprMat[21711,], exprMat[21712,])
+n <- which(exprMat[21712,]>0)
+#row 21711 has 2 cells with expression for this gene and row 21712 has 32 cells with expression, so row 21712 will be kept.
+which(rownames(exprMat)==names(m)[7])
+plot(exprMat[20258,], exprMat[20259,])
+n <- which(exprMat[20259,]>0)
+#row 20258 has 1557 cells with expression for this gene and row 20259 has only 52 cells with expression, so row 20258 will be kept
+which(rownames(exprMat)==names(m)[8])
+plot(exprMat[33007,], exprMat[33394,])
+#these rows show the same expression, so the first row, 33007 will be kept
+which(rownames(exprMat)==names(m)[9])
+plot(exprMat[19043,], exprMat[19044,])
+n <- which(exprMat[19044,]>0)
+#row 19043 has 190 cells with expression and row 19044 has 429 rows with expression for this gene, so row 19044 will be kept
+which(rownames(exprMat)==names(m)[10])
+plot(exprMat[17072,], exprMat[17073,])
+n <- which(exprMat[17073,]>0)
+#row 17072 has 36 cells with expression and row 17073 has 130 cells with expression for this gene, so row 17073 will be kept
+which(rownames(exprMat)==names(m)[11])
+plot(exprMat[5436,], exprMat[5439,])
+n <- which(exprMat[5439,]>0)
+#row 5436 has 21 cells with expression and row 5439 has 7 cells with expression, so row 5436 will be kept
+which(rownames(exprMat)==names(m)[12])
+plot(exprMat[16456,], exprMat[16460,])
+#row 16460 has 0 cells with expression for this gene, so row 16456 will be kept
+which(rownames(exprMat)==names(m)[13])
+plot(exprMat[23966,], exprMat[23967,])
+#these rows have the same expression, so the first row, 23966 will be kept
+which(rownames(exprMat)==names(m)[14])
+plot(exprMat[9596,], exprMat[9598,])
+#row 9596 has no cells with expression for this gene while row 9598 has, so row 9598 will be kept
+which(rownames(exprMat)==names(m)[15])
+plot(exprMat[4799,], exprMat[4800,])
+#row 4800 has no cells with expression for this gene, while row 4799 has, so row 4799 will be kept
+which(rownames(exprMat)==names(m)[16])
+plot(exprMat[14541,], exprMat[14543,])
+#row 14541 has no cells with expression for this gene, while row 14543 has, so row 14543 will be kept
+which(rownames(exprMat)==names(m)[17])
+plot(exprMat[12719,], exprMat[12723,])
+n <- which(exprMat[12723,]>0)
+#row 12719 has 113 cells with expression for this gene and row 12723 has 2755 cells with expression, so row 12723 will be kept
+which(rownames(exprMat)==names(m)[18])
+plot(exprMat[5833,], exprMat[5834,])
+#row 5833 has no cells with expression for this gene, while row 5834 has, so row 5834 will be kept
+which(rownames(exprMat)==names(m)[19])
+plot(exprMat[2231,], exprMat[2233,])
+n <- which(exprMat[2233,]>0)
+#row 2231 has 118 cells with expression for this gene and row 2233 has 95 cells with expression, so row 2231 will be kept
+which(rownames(exprMat)==names(m)[20])
+plot(exprMat[32974,], exprMat[32975,])
+#row 32975 has no cells with expression for this gene, while row 11684 has, so row 32974 will be kept
+which(rownames(exprMat)==names(m)[21])
+plot(exprMat[11684,], exprMat[11685,])
+#row 11685 has no cells with expression for this gene, while row 11684 has, so row 11684 will be kept
+which(rownames(exprMat)==names(m)[22])
+plot(exprMat[2998,], exprMat[3000,])
+n <- which(exprMat[3000,]>0)
+#row 2998 has 336 cells with expression for this gene and row 3000 has 153 cells with expression, so row 2998 will be kept
+which(rownames(exprMat)==names(m)[23])
+plot(exprMat[14006,], exprMat[14009,])
+n <- which(exprMat[14009,]>0)
+#row 14006 has 242 cells with expression for this gene and row 14009 has 203 cells with expression, so row 14006 will be kept
+which(rownames(exprMat)==names(m)[24])
+plot(exprMat[6462,], exprMat[6463,])
+#these rows have the same expression for this gene, so the first row, 6462 will be kept
+
+exprMatl <- exprMat[-c(13264, 6095, 6916, 26225, 5954, 21711, 20259, 33394, 19043, 17072, 5439, 16460, 23967, 9596, 4800, 14541, 12719, 5833, 2233, 32975, 11685, 3000, 14009, 6463),]
+dim(exprMatl)
+any(table(rownames(exprMatl))>1)
+#Check if there are any double rownames left --> no double rownames left
+saveRDS(~/raw/data/exprMat.Rds")
+#This resulted in the creation of the expression matrix of the raw data
+```
+```{log transformed}
+#These transformed expression matrix can be used in the SCENIC analysis just like the normal expression matrix. See IIDP4stressedcells_analysed_with_SCENIC/SCENIC analysis file for the SCENIC analysis.
+exprMat_log <- log(exprMat + 1)
+exprMat_filtered_log <- log(exprMat_filtered + 1)
+```
+```{log normalised}
+#As for the log transformed, the log normalised expression matrix can be just in the SCENIC analysis.
+log_exprMat <- as.matrix(LogNormalize(exprMat, scale.factor = 10^6))
+log_exprMat_filtered <- as.matrix(LogNormalize(exprMat_filtered, scale.factor = 10^6))
+```
+DOWNSAMPLED
+See IIDP4stressedcells_analysed_with_SCENIC/SCENIC analysis for the analysis and the obtainment of the expression matrix.
